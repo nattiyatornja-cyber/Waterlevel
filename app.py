@@ -158,13 +158,15 @@ def load_forecast(points):
 
 
 is_phone = any(k in st.context.headers.get("User-Agent", "") for k in ("Mobile", "Android", "iPhone"))
-with st.container(horizontal=True, horizontal_alignment="right"):
-    lang_choice = st.segmented_control("ภาษา / Language", ["ไทย", "English"], default="ไทย", key="lang",
-                                       bind="query-params", label_visibility="collapsed")
-    view_choice = st.segmented_control("View", ["Desktop", "Mobile"], default="Mobile" if is_phone else "Desktop",
-                                       format_func=lambda v: {"Desktop": ":material/computer: Desktop",
-                                                              "Mobile": ":material/smartphone: Mobile"}[v],
-                                       key="view", bind="query-params", label_visibility="collapsed")
+with st.container(horizontal=True, horizontal_alignment="distribute", vertical_alignment="center"):
+    st.caption("Powered by PE System & Data Integration Team", width="content")
+    with st.container(horizontal=True, horizontal_alignment="right", width="content"):
+        lang_choice = st.segmented_control("ภาษา / Language", ["ไทย", "English"], default="ไทย", key="lang",
+                                           bind="query-params", label_visibility="collapsed")
+        view_choice = st.segmented_control("View", ["Desktop", "Mobile"], default="Mobile" if is_phone else "Desktop",
+                                           format_func=lambda v: {"Desktop": ":material/computer: Desktop",
+                                                                  "Mobile": ":material/smartphone: Mobile"}[v],
+                                           key="view", bind="query-params", label_visibility="collapsed")
 lang = "en" if lang_choice == "English" else "th"
 mobile = view_choice == "Mobile"
 t = T[lang]
