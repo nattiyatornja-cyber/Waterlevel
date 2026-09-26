@@ -8,7 +8,7 @@ st.set_page_config(page_title="Flood route monitor", page_icon=":material/flood:
 
 T = {
     "th": {
-        "settings": "ตั้งค่า", "language": "ภาษา / Language",
+        "settings": "ตั้งค่า", "language": "ภาษา / Language", "more": "ดูรายละเอียด",
         "buffer": "ระยะห่างจากเส้นทาง (กม.)",
         "heavy_1h": "ฝนหนัก 1 ชม. (มม.)", "heavy_1h_help": "ถึงค่านี้ = เสี่ยงน้ำท่วม, ครึ่งหนึ่ง = เฝ้าระวัง",
         "heavy_24h": "ฝนสะสม 24 ชม. เฝ้าระวัง (มม.)", "heavy_24h_help": ">= 90 มม. = เสี่ยงน้ำท่วม",
@@ -70,7 +70,7 @@ T = {
                   "- **เป็นการประเมินจากข้อมูลฝนและระดับน้ำ ไม่ใช่การวัดน้ำบนถนนจริง** (เซนเซอร์น้ำท่วมถนนของ กทม. เข้าถึงจากเครือข่ายนี้ไม่ได้)",
     },
     "en": {
-        "settings": "Settings", "language": "ภาษา / Language",
+        "settings": "Settings", "language": "ภาษา / Language", "more": "More details",
         "buffer": "Distance from route (km)",
         "heavy_1h": "Heavy rain, 1 h (mm)", "heavy_1h_help": "At or above = flood risk, half = watch",
         "heavy_24h": "24 h rainfall watch level (mm)", "heavy_24h_help": ">= 90 mm = flood risk",
@@ -157,11 +157,20 @@ def load_forecast(points):
     return fd.fetch_forecast(list(points))
 
 
-with st.sidebar:
+is_phone = any(k in st.context.headers.get("User-Agent", "") for k in ("Mobile", "Android", "iPhone"))
+with st.container(horizontal=True, horizontal_alignment="right"):
     lang_choice = st.segmented_control("ภาษา / Language", ["ไทย", "English"], default="ไทย", key="lang",
-                                       bind="query-params")
-    lang = "en" if lang_choice == "English" else "th"
-    t = T[lang]
+                                       bind="query-params", label_visibility="collapsed")
+    view_choice = st.segmented_control("View", ["Desktop", "Mobile"], default="Mobile" if is_phone else "Desktop",
+                                       format_func=lambda v: {"Desktop": ":material/computer: Desktop",
+                                                              "Mobile": ":material/smartphone: Mobile"}[v],
+                                       key="view", bind="query-params", label_visibility="collapsed")
+lang = "en" if lang_choice == "English" else "th"
+mobile = view_choice == "Mobile"
+t = T[lang]
+MAP_H = {"main": 420, "detail": 380, "bkk": 400} if mobile else {"main": 620, "detail": 450, "bkk": 500}
+
+with st.sidebar:
     st.header(t["settings"])
     buffer_km = st.slider(t["buffer"], 1.0, 10.0, 3.0, 0.5)
     heavy_1h = st.number_input(t["heavy_1h"], 5, 100, 30, help=t["heavy_1h_help"])
@@ -176,19 +185,20 @@ st.title(t["title"])
 
 
 def route_card(route_id, r, recommended=False):
-    with st.container(border=True, width=340):
+    with st.container(border=True, width="stretch" if mobile else 340):
         st.markdown(f"**{fd.ROUTES[route_id]['name'][lang]}**" + (" :material/star:" if recommended else ""))
         st.badge(fd.PASS_LABEL[lang][r["level"]], color=fd.PASS_BADGE[r["level"]], icon=PASS_ICON[r["level"]])
         st.caption(t["km_min"].format(d=r["route"]["distance_km"], m=r["route"]["duration_min"])
                    + f" · {t['toll']}: {t['toll_yes'] if TOLL[route_id] else t['toll_no']}")
         st.caption(t["km_breakdown"].format(**{f"k{i}": r["km"][i] for i in range(4)}))
-        c1, c2 = st.columns(2)
-        rain = r["rain"]
-        c1.metric(t["rain1"], f"{rain['rain_1h'].max() if not rain.empty else 0:.1f} {t['mm']}")
-        c2.metric(t["rain24"], f"{rain['rain_24h'].max() if not rain.empty else 0:.1f} {t['mm']}")
-        c1.metric(t["fc"], f"{r['fc_max']:.1f} {t['fc_unit']}")
-        c2.metric(t["wl_high"], int((r["wl"]["situation_level"] >= 4).sum()))
-        st.caption(f"{t['roads']}: " + " › ".join(fd.road_label(n, lang) for n in r["route"]["roads"]))
+        with st.expander(t["more"]) if mobile else st.container():
+            c1, c2 = st.columns(2)
+            rain = r["rain"]
+            c1.metric(t["rain1"], f"{rain['rain_1h'].max() if not rain.empty else 0:.1f} {t['mm']}")
+            c2.metric(t["rain24"], f"{rain['rain_24h'].max() if not rain.empty else 0:.1f} {t['mm']}")
+            c1.metric(t["fc"], f"{r['fc_max']:.1f} {t['fc_unit']}")
+            c2.metric(t["wl_high"], int((r["wl"]["situation_level"] >= 4).sum()))
+            st.caption(f"{t['roads']}: " + " › ".join(fd.road_label(n, lang) for n in r["route"]["roads"]))
         st.link_button(t["gmaps"], fd.gmaps_directions_url(route_id), icon=":material/traffic:", width="stretch")
 
 
@@ -223,13 +233,13 @@ def dashboard():
     if results[best]["level"] >= 2:
         st.warning(t["all_risky"], icon=":material/warning:")
     st.success(t["recommend"].format(name=fd.ROUTES[best]["name"][lang]), icon=":material/route:")
-    with st.container(horizontal=True):
+    with st.container(horizontal=not mobile):
         for route_id in airport:
             route_card(route_id, results[route_id], recommended=route_id == best)
     st.caption(t["compare_note"])
 
     st.subheader(t["wd_section"])
-    with st.container(horizontal=True):
+    with st.container(horizontal=not mobile):
         for route_id in [k for k, v in fd.ROUTES.items() if v["group"] == "wd"]:
             route_card(route_id, results[route_id])
 
@@ -302,9 +312,9 @@ def pass_legend():
 
 def render_map(results, wl, rain):
     pass_legend()
-    view = pdk.ViewState(latitude=13.9, longitude=100.95, zoom=8.3)
+    view = pdk.ViewState(latitude=13.9, longitude=100.95, zoom=7.3 if mobile else 8.3)
     st.pydeck_chart(pdk.Deck(station_layers(wl, rain) + path_layer(results) + location_layer(), initial_view_state=view,
-                             tooltip={"html": "{tip}"}), height=620)
+                             tooltip={"html": "{tip}"}), height=MAP_H["main"])
     st.caption(t["map_legend"])
 
 
@@ -312,12 +322,12 @@ def render_route_detail(route_id, r):
     coords = r["route"]["coords"]
     lons, lats = [c[0] for c in coords], [c[1] for c in coords]
     span = max(max(lons) - min(lons), max(lats) - min(lats))
-    zoom = 11 if span < 0.3 else 10 if span < 0.6 else 9 if span < 1.2 else 8
+    zoom = (11 if span < 0.3 else 10 if span < 0.6 else 9 if span < 1.2 else 8) - (1 if mobile else 0)
     pass_legend()
     st.pydeck_chart(pdk.Deck(station_layers(r["wl"], r["rain"]) + path_layer({route_id: r}) + location_layer(),
                              initial_view_state=pdk.ViewState(latitude=(min(lats) + max(lats)) / 2,
                                                               longitude=(min(lons) + max(lons)) / 2, zoom=zoom),
-                             tooltip={"html": "{tip}"}), height=450)
+                             tooltip={"html": "{tip}"}), height=MAP_H["detail"])
 
     st.subheader(t["problem_title"])
     seg = r["segments"]
@@ -341,7 +351,7 @@ def render_route_detail(route_id, r):
             },
         )
 
-    left, right = st.columns(2)
+    left, right = (st.container(), st.container()) if mobile else st.columns(2)
     with left:
         st.subheader(t["rain_near"])
         st.dataframe(
@@ -394,8 +404,9 @@ def render_bangkok(wl, rain):
 
     hotel = fd.LOCATIONS["Hotel"]
     st.pydeck_chart(pdk.Deck(station_layers(bkk_wl, bkk_rain) + location_layer(),
-                             initial_view_state=pdk.ViewState(latitude=hotel["lat"], longitude=hotel["lon"] + 0.08, zoom=10.3),
-                             tooltip={"html": "{tip}"}), height=500)
+                             initial_view_state=pdk.ViewState(latitude=hotel["lat"], longitude=hotel["lon"] + 0.08,
+                                                              zoom=9.5 if mobile else 10.3),
+                             tooltip={"html": "{tip}"}), height=MAP_H["bkk"])
 
     st.subheader(t["by_district"])
     st.dataframe(
